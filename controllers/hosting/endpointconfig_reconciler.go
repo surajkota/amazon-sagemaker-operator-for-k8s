@@ -295,7 +295,8 @@ func (r *endpointConfigReconciler) GetSageMakerEndpointConfigName(ctx context.Co
 	var err error
 	var desiredEndpointConfig *endpointconfigv1.EndpointConfig
 	if desiredEndpointConfig, err = r.extractDesiredEndpointConfigFromHostingDeployment(ctx, desiredDeployment); err != nil {
-		return "", errors.Wrap(err, "Unable to interpret HostingDeployment endpoint config")
+		//ctx.Log.Info("Unable to interpret HostingDeployment endpoint config")
+		return "", err
 	}
 
 	if desiredEndpointConfig == nil {

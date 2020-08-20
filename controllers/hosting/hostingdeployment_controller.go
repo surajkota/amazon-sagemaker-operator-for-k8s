@@ -199,6 +199,9 @@ func (r *HostingDeploymentReconciler) reconcileHostingDeployment(ctx reconcileRe
 		}
 
 		if err = r.createEndpoint(ctx); err != nil {
+			if clientwrapper.IsInvalidParameterError(err) {
+				return r.updateStatusWithAdditional(ctx, string(sagemaker.EndpointStatusFailed), err.Error())
+			}
 			return r.updateStatusAndReturnError(ctx, ReconcilingEndpointStatus, errors.Wrap(err, "Unable to create Endpoint"))
 		}
 
@@ -310,7 +313,8 @@ func (r *HostingDeploymentReconciler) handleUpdates(ctx reconcileRequestContext)
 func (r *HostingDeploymentReconciler) createEndpoint(ctx reconcileRequestContext) error {
 	var err error
 	if err = r.reconcileEndpointResources(ctx, false); err != nil {
-		return errors.Wrap(err, "Unable to reconcile Endpoint resources")
+		ctx.Log.Info("Unable to reconcile Endpoint resources", "err", err)
+		return err
 	}
 
 	var createEndpointInput *sagemaker.CreateEndpointInput
@@ -321,7 +325,8 @@ func (r *HostingDeploymentReconciler) createEndpoint(ctx reconcileRequestContext
 	r.Log.Info("Create endpoint", "input", createEndpointInput)
 
 	if _, err := ctx.SageMakerClient.CreateEndpoint(ctx, createEndpointInput); err != nil {
-		return errors.Wrap(err, "Unable to create Endpoint")
+		ctx.Log.Info("Unable to create Endpoint", "err", err)
+		return err
 	}
 
 	return nil
@@ -376,7 +381,8 @@ func (r *HostingDeploymentReconciler) reconcileEndpointResources(ctx reconcileRe
 	}
 
 	if err := ctx.EndpointConfigReconciler.Reconcile(ctx, ctx.Deployment, shouldDeleteUnusedResources); err != nil {
-		return r.updateStatusAndReturnError(ctx, ReconcilingEndpointStatus, errors.Wrap(err, "Unable to reconcile EndpointConfigs"))
+		ctx.Log.Info("Unable to reconcile EndpointConfigs", "err", err)
+		return r.updateStatusAndReturnError(ctx, ReconcilingEndpointStatus, err)
 	}
 	return nil
 }

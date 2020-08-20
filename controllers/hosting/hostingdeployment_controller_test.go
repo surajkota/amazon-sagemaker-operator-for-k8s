@@ -22,6 +22,7 @@ import (
 	"time"
 
 	. "container/list"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -243,40 +244,70 @@ var _ = Describe("Reconciling a HostingDeployment that exists", func() {
 		})
 
 		Context("!HasDeletionTimestamp", func() {
-			BeforeEach(func() {
-				mockSageMakerClientBuilder.
-					AddCreateEndpointResponse(sagemaker.CreateEndpointOutput{}).
-					AddDescribeEndpointResponse(CreateDescribeOutputWithOnlyStatus(sagemaker.EndpointStatusCreating))
 
-				shouldHaveDeletionTimestamp = false
-				shouldHaveFinalizer = true
-				shouldHaveEndpointConfig = true
+			When("CreateJobReturnsUserError", func() {
+				var failureReason string
+				var expectedStatus sagemaker.EndpointStatus
 
-				// Add twice because there are two calls to GetSageMakerEndpointConfigName.
-				sageMakerEndpointConfigNames.PushBack(endpointConfigSageMakerName)
-				sageMakerEndpointConfigNames.PushBack(endpointConfigSageMakerName)
+				BeforeEach(func() {
+					failureReason = "ValidationException"
+					expectedStatus = sagemaker.EndpointStatusFailed
+					mockSageMakerClientBuilder.AddCreateEndpointErrorResponse(failureReason, "Invalid Parameter", 400, "request-id")
+
+					// Add twice because there are two calls to GetSageMakerEndpointConfigName.
+					sageMakerEndpointConfigNames.PushBack(endpointConfigSageMakerName)
+					sageMakerEndpointConfigNames.PushBack(endpointConfigSageMakerName)
+				})
+
+				It("Doesn't requeue", func() {
+					Expect(reconcileResult.Requeue).To(Equal(false))
+				})
+
+				It("Updates status", func() {
+					ExpectStatusToBe(deployment, string(expectedStatus))
+				})
+
+				It("Has the additional field set", func() {
+					ExpectAdditionalToContain(deployment, failureReason)
+				})
 			})
 
-			It("Creates necessary resources", func() {
-				ExpectNthSubreconcilerCallToKeepUnusedResources(modelReconciler, endpointConfigReconciler, 0)
-			})
+			When("CreateJobisSuccessful", func() {
+				BeforeEach(func() {
+					mockSageMakerClientBuilder.
+						AddCreateEndpointResponse(sagemaker.CreateEndpointOutput{}).
+						AddDescribeEndpointResponse(CreateDescribeOutputWithOnlyStatus(sagemaker.EndpointStatusCreating))
 
-			It("Creates an Endpoint", func() {
+					shouldHaveDeletionTimestamp = false
+					shouldHaveFinalizer = true
+					shouldHaveEndpointConfig = true
 
-				req := receivedRequests.Front().Next().Value
-				Expect(req).To(BeAssignableToTypeOf((*sagemaker.CreateEndpointInput)(nil)))
+					// Add twice because there are two calls to GetSageMakerEndpointConfigName.
+					sageMakerEndpointConfigNames.PushBack(endpointConfigSageMakerName)
+					sageMakerEndpointConfigNames.PushBack(endpointConfigSageMakerName)
+				})
 
-				createdRequest := req.(*sagemaker.CreateEndpointInput)
-				Expect(*createdRequest.EndpointConfigName).To(Equal(endpointConfigSageMakerName))
-				Expect(*createdRequest.EndpointName).To(Equal(controllercommon.GetGeneratedJobName(deployment.ObjectMeta.GetUID(), deployment.ObjectMeta.GetName(), 63)))
-			})
+				It("Creates necessary resources", func() {
+					ExpectNthSubreconcilerCallToKeepUnusedResources(modelReconciler, endpointConfigReconciler, 0)
+				})
 
-			It("Requeues after interval", func() {
-				ExpectRequeueAfterInterval(reconcileResult, reconcileError, pollDuration)
-			})
+				It("Creates an Endpoint", func() {
 
-			It("Updates status", func() {
-				ExpectStatusToBe(deployment, string(sagemaker.EndpointStatusCreating))
+					req := receivedRequests.Front().Next().Value
+					Expect(req).To(BeAssignableToTypeOf((*sagemaker.CreateEndpointInput)(nil)))
+
+					createdRequest := req.(*sagemaker.CreateEndpointInput)
+					Expect(*createdRequest.EndpointConfigName).To(Equal(endpointConfigSageMakerName))
+					Expect(*createdRequest.EndpointName).To(Equal(controllercommon.GetGeneratedJobName(deployment.ObjectMeta.GetUID(), deployment.ObjectMeta.GetName(), 63)))
+				})
+
+				It("Requeues after interval", func() {
+					ExpectRequeueAfterInterval(reconcileResult, reconcileError, pollDuration)
+				})
+
+				It("Updates status", func() {
+					ExpectStatusToBe(deployment, string(sagemaker.EndpointStatusCreating))
+				})
 			})
 		})
 	})

@@ -168,6 +168,9 @@ func (r *Reconciler) reconcileTrainingJob(ctx reconcileRequestContext) error {
 		}
 
 		if err = r.createTrainingJob(ctx); err != nil {
+			if clientwrapper.IsInvalidParameterError(err) {
+				return r.updateStatusWithAdditional(ctx, string(sagemaker.TrainingJobStatusFailed), "", err.Error())
+			}
 			return r.updateStatusAndReturnError(ctx, ReconcilingTrainingJobStatus, "", errors.Wrap(err, "Unable to create training job"))
 		}
 
@@ -287,7 +290,8 @@ func (r *Reconciler) createTrainingJob(ctx reconcileRequestContext) error {
 	ctx.Log.Info("Creating TrainingJob in SageMaker", "input", createTrainingJobInput)
 
 	if _, err := ctx.SageMakerClient.CreateTrainingJob(ctx, &createTrainingJobInput); err != nil {
-		return errors.Wrap(err, "Unable to create Training Job")
+		ctx.Log.Info("Unable to create Training Job", "err", err)
+		return err
 	}
 
 	return nil

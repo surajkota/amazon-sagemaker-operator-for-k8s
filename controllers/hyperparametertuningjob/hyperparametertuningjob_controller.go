@@ -172,6 +172,9 @@ func (r *Reconciler) reconcileTuningJob(ctx reconcileRequestContext) error {
 		}
 
 		if err = r.createHyperParameterTuningJob(ctx); err != nil {
+			if clientwrapper.IsInvalidParameterError(err) {
+				return r.updateStatusWithAdditional(ctx, string(sagemaker.HyperParameterTuningJobStatusFailed), err.Error())
+			}
 			return r.updateStatusAndReturnError(ctx, ReconcilingTuningJobStatus, errors.Wrap(err, "Unable to create hyperparameter tuning job"))
 		}
 
@@ -261,7 +264,8 @@ func (r *Reconciler) createHyperParameterTuningJob(ctx reconcileRequestContext) 
 	ctx.Log.Info("Creating TuningJob in SageMaker", "input", createTuningJobInput)
 
 	if _, err := ctx.SageMakerClient.CreateHyperParameterTuningJob(ctx, &createTuningJobInput); err != nil {
-		return errors.Wrap(err, "Unable to create HyperParameter Tuning Job")
+		ctx.Log.Info("Unable to create HyperParameter Tuning Job", "err", err)
+		return err
 	}
 
 	return nil

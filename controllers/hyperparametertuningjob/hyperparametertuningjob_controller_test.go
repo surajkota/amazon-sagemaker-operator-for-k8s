@@ -234,36 +234,61 @@ var _ = Describe("Reconciling a HyperParameterTuningJob that exists", func() {
 		})
 
 		Context("!HasDeletionTimestamp", func() {
-			BeforeEach(func() {
-				mockSageMakerClientBuilder.
-					AddCreateHyperParameterTuningJobResponse(sagemaker.CreateHyperParameterTuningJobOutput{}).
-					AddDescribeHyperParameterTuningJobResponse(CreateDescribeOutputWithOnlyStatus(sagemaker.HyperParameterTuningJobStatusInProgress, bestTrainingJob, statusCounters))
 
-				shouldHaveDeletionTimestamp = false
-				shouldHaveFinalizer = true
-			})
-
-			It("Creates a HyperParameterTuningJob", func() {
-				req := receivedRequests.Front().Next().Value
-				ExpectRequestToCreateHyperParameterTuningJob(req, controllers.GetGeneratedJobName(tuningJob.ObjectMeta.GetUID(), tuningJob.ObjectMeta.GetName(), MaxHyperParameterTuningJobNameLength))
-			})
-
-			It("Requeues after interval", func() {
-				ExpectRequeueAfterInterval(reconcileResult, reconcileError, pollDuration)
-			})
-
-			It("Updates status", func() {
-				ExpectStatusToBe(tuningJob, string(sagemaker.HyperParameterTuningJobStatusInProgress))
-			})
-
-			Context("Spec defines HyperParameterTuningJobName", func() {
+			When("CreateJobReturnsUserError", func() {
+				var failureReason string
+				var expectedStatus sagemaker.HyperParameterTuningJobStatus
 				BeforeEach(func() {
-					tuningJob.Spec.HyperParameterTuningJobName = ToStringPtr("tuning-job-name")
+					failureReason = "ValidationException"
+					expectedStatus = sagemaker.HyperParameterTuningJobStatusFailed
+					mockSageMakerClientBuilder.AddCreateHyperParameterTuningJobErrorResponse(failureReason, "Invalid Parameter", 400, "request-id")
+				})
+
+				It("Doesn't requeue", func() {
+					ExpectNoRequeue(reconcileResult, reconcileError)
+				})
+
+				It("Updates status", func() {
+					ExpectStatusToBe(tuningJob, string(expectedStatus))
+				})
+
+				It("Has the additional field set", func() {
+					ExpectAdditionalToContain(tuningJob, failureReason)
+				})
+			})
+
+			When("CreateJobisSuccessful", func() {
+				BeforeEach(func() {
+					mockSageMakerClientBuilder.
+						AddCreateHyperParameterTuningJobResponse(sagemaker.CreateHyperParameterTuningJobOutput{}).
+						AddDescribeHyperParameterTuningJobResponse(CreateDescribeOutputWithOnlyStatus(sagemaker.HyperParameterTuningJobStatusInProgress, bestTrainingJob, statusCounters))
+
+					shouldHaveDeletionTimestamp = false
+					shouldHaveFinalizer = true
 				})
 
 				It("Creates a HyperParameterTuningJob", func() {
 					req := receivedRequests.Front().Next().Value
-					ExpectRequestToCreateHyperParameterTuningJob(req, "tuning-job-name")
+					ExpectRequestToCreateHyperParameterTuningJob(req, controllers.GetGeneratedJobName(tuningJob.ObjectMeta.GetUID(), tuningJob.ObjectMeta.GetName(), MaxHyperParameterTuningJobNameLength))
+				})
+
+				It("Requeues after interval", func() {
+					ExpectRequeueAfterInterval(reconcileResult, reconcileError, pollDuration)
+				})
+
+				It("Updates status", func() {
+					ExpectStatusToBe(tuningJob, string(sagemaker.HyperParameterTuningJobStatusInProgress))
+				})
+
+				Context("Spec defines HyperParameterTuningJobName", func() {
+					BeforeEach(func() {
+						tuningJob.Spec.HyperParameterTuningJobName = ToStringPtr("tuning-job-name")
+					})
+
+					It("Creates a HyperParameterTuningJob", func() {
+						req := receivedRequests.Front().Next().Value
+						ExpectRequestToCreateHyperParameterTuningJob(req, "tuning-job-name")
+					})
 				})
 			})
 		})

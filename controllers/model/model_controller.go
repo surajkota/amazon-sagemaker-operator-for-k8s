@@ -171,8 +171,10 @@ func (r *ModelReconciler) reconcileModel(ctx reconcileRequestContext) error {
 
 	// If update or create, create the desired model.
 	if action == NeedsCreate || action == NeedsUpdate {
-		if ctx.ModelDescription, err = r.reconcileCreation(ctx, ctx.SageMakerClient, ctx.Model.Spec, generateModelName(ctx.Model)); err != nil {
-			return r.updateStatusAndReturnError(ctx, ErrorStatus, errors.Wrap(err, "Unable to create SageMaker model"))
+		var modelName string = generateModelName(ctx.Model)
+		if ctx.ModelDescription, err = r.reconcileCreation(ctx, ctx.SageMakerClient, ctx.Model.Spec, modelName); err != nil {
+			ctx.Log.Info("Unable to create SageMaker model", "modelName:", modelName)
+			return r.updateStatusAndReturnError(ctx, ErrorStatus, err)
 		}
 	}
 
@@ -265,7 +267,7 @@ func (r *ModelReconciler) reconcileCreation(ctx context.Context, sageMakerClient
 	}
 
 	if _, err := sageMakerClient.CreateModel(ctx, input); err != nil {
-		return nil, errors.Wrap(err, "Unable to create SageMaker Model")
+		return nil, err
 	}
 
 	var output *sagemaker.DescribeModelOutput

@@ -28,7 +28,7 @@ import (
 	"github.com/aws/amazon-sagemaker-operator-for-k8s/controllers"
 )
 
-// Provides the prefixes and error codes relating to each endpoint
+// Provides the prefixes and error codes relating to each endpoint https://docs.aws.amazon.com/sagemaker/latest/APIReference/CommonErrors.html
 const (
 	DescribeTrainingJob404Code          = "ValidationException"
 	DescribeTrainingJob404MessagePrefix = "Requested resource not found"
@@ -106,6 +106,19 @@ type sageMakerClientWrapper struct {
 	SageMakerClientWrapper
 
 	innerClient sagemakeriface.ClientAPI
+}
+
+// IsInvalidParameter determines if type of error is an input validation/missing error
+func IsInvalidParameter(errorCode string) bool {
+	switch errorCode {
+	case
+		"ValidationException",
+		"InvalidParameterCombination",
+		"InvalidParameterValue",
+		"MissingParameter":
+		return true
+	}
+	return false
 }
 
 // Return a training job description or nil if error or does not exist.
@@ -495,6 +508,15 @@ func IsUpdateEndpoint404Error(err error) bool {
 func IsStopTrainingJob404Error(err error) bool {
 	if requestFailure, isRequestFailure := err.(awserr.RequestFailure); isRequestFailure {
 		return requestFailure.Code() == StopTrainingJob404Code && strings.HasPrefix(requestFailure.Message(), StopTrainingJob404MessagePrefix)
+	}
+
+	return false
+}
+
+// IsInvalidParameterError determines whether the given error is equivalent to an HTTP 400 status code.
+func IsInvalidParameterError(err error) bool {
+	if requestFailure, isRequestFailure := err.(awserr.RequestFailure); isRequestFailure {
+		return IsInvalidParameter(requestFailure.Code())
 	}
 
 	return false

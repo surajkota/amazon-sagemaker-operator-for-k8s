@@ -216,48 +216,40 @@ var _ = Describe("Reconciling a TrainingJob that exists", func() {
 		})
 
 		Context("!HasDeletionTimestamp", func() {
-			BeforeEach(func() {
-				mockSageMakerClientBuilder.
-					AddCreateTrainingJobResponse(sagemaker.CreateTrainingJobOutput{}).
-					AddDescribeTrainingJobResponse(CreateDescribeOutputWithOnlyStatus(sagemaker.TrainingJobStatusInProgress, sagemaker.SecondaryStatusStarting))
 
-				shouldHaveDeletionTimestamp = false
-				shouldHaveFinalizer = true
-			})
-
-			It("Creates a TrainingJob", func() {
-				req := receivedRequests.Front().Next().Value
-				Expect(req).To(BeAssignableToTypeOf((*sagemaker.CreateTrainingJobInput)(nil)))
-
-				createdRequest := req.(*sagemaker.CreateTrainingJobInput)
-				Expect(*createdRequest.TrainingJobName).To(Equal(controllers.GetGeneratedJobName(trainingJob.ObjectMeta.GetUID(), trainingJob.ObjectMeta.GetName(), MaxTrainingJobNameLength)))
-			})
-
-			It("Requeues after interval", func() {
-				ExpectRequeueAfterInterval(reconcileResult, reconcileError, pollDuration)
-			})
-
-			It("Updates status", func() {
-				ExpectTrainingJobStatusToBe(trainingJob, string(sagemaker.TrainingJobStatusInProgress), string(sagemaker.SecondaryStatusStarting))
-			})
-
-			It("Adds the training job name to the spec", func() {
-				ExpectTrainingJobNameInSpec(controllers.GetGeneratedJobName(trainingJob.ObjectMeta.GetUID(), trainingJob.ObjectMeta.GetName(), MaxTrainingJobNameLength), trainingJob)
-			})
-
-			It("Adds the training job name to the status", func() {
-				ExpectTrainingJobNameInStatus(controllers.GetGeneratedJobName(trainingJob.ObjectMeta.GetUID(), trainingJob.ObjectMeta.GetName(), MaxTrainingJobNameLength), trainingJob)
-			})
-
-			Context("Spec defines TrainingJobName", func() {
-				var (
-					// Defines the training job name that would be specified in the spec.
-					specifiedTrainingJobName string
-				)
+			When("CreateJobReturnsUserError", func() {
+				var failureReason string
+				var expectedStatus sagemaker.TrainingJobStatus
+				var expectedSecondaryStatus sagemaker.SecondaryStatus
 
 				BeforeEach(func() {
-					specifiedTrainingJobName = "training-job-name"
-					trainingJob.Spec.TrainingJobName = ToStringPtr(specifiedTrainingJobName)
+					failureReason = "ValidationException"
+					expectedStatus = sagemaker.TrainingJobStatusFailed
+					expectedSecondaryStatus = ""
+					mockSageMakerClientBuilder.AddCreateTrainingJobErrorResponse(failureReason, "Invalid Parameter", 400, "request-id")
+				})
+
+				It("Doesn't requeue", func() {
+					ExpectNoRequeue(reconcileResult, reconcileError)
+				})
+
+				It("Updates status", func() {
+					ExpectTrainingJobStatusToBe(trainingJob, string(expectedStatus), string(expectedSecondaryStatus))
+				})
+
+				It("Has the additional field set", func() {
+					ExpectAdditionalToContain(trainingJob, failureReason)
+				})
+			})
+
+			When("CreateJobisSuccessful", func() {
+				BeforeEach(func() {
+					mockSageMakerClientBuilder.
+						AddCreateTrainingJobResponse(sagemaker.CreateTrainingJobOutput{}).
+						AddDescribeTrainingJobResponse(CreateDescribeOutputWithOnlyStatus(sagemaker.TrainingJobStatusInProgress, sagemaker.SecondaryStatusStarting))
+
+					shouldHaveDeletionTimestamp = false
+					shouldHaveFinalizer = true
 				})
 
 				It("Creates a TrainingJob", func() {
@@ -265,15 +257,51 @@ var _ = Describe("Reconciling a TrainingJob that exists", func() {
 					Expect(req).To(BeAssignableToTypeOf((*sagemaker.CreateTrainingJobInput)(nil)))
 
 					createdRequest := req.(*sagemaker.CreateTrainingJobInput)
-					Expect(*createdRequest.TrainingJobName).To(Equal(specifiedTrainingJobName))
+					Expect(*createdRequest.TrainingJobName).To(Equal(controllers.GetGeneratedJobName(trainingJob.ObjectMeta.GetUID(), trainingJob.ObjectMeta.GetName(), MaxTrainingJobNameLength)))
 				})
 
-				It("Does not modify the job name in the spec", func() {
-					ExpectTrainingJobNameInSpec(specifiedTrainingJobName, trainingJob)
+				It("Requeues after interval", func() {
+					ExpectRequeueAfterInterval(reconcileResult, reconcileError, pollDuration)
+				})
+
+				It("Updates status", func() {
+					ExpectTrainingJobStatusToBe(trainingJob, string(sagemaker.TrainingJobStatusInProgress), string(sagemaker.SecondaryStatusStarting))
+				})
+
+				It("Adds the training job name to the spec", func() {
+					ExpectTrainingJobNameInSpec(controllers.GetGeneratedJobName(trainingJob.ObjectMeta.GetUID(), trainingJob.ObjectMeta.GetName(), MaxTrainingJobNameLength), trainingJob)
 				})
 
 				It("Adds the training job name to the status", func() {
-					ExpectTrainingJobNameInStatus(specifiedTrainingJobName, trainingJob)
+					ExpectTrainingJobNameInStatus(controllers.GetGeneratedJobName(trainingJob.ObjectMeta.GetUID(), trainingJob.ObjectMeta.GetName(), MaxTrainingJobNameLength), trainingJob)
+				})
+
+				Context("Spec defines TrainingJobName", func() {
+					var (
+						// Defines the training job name that would be specified in the spec.
+						specifiedTrainingJobName string
+					)
+
+					BeforeEach(func() {
+						specifiedTrainingJobName = "training-job-name"
+						trainingJob.Spec.TrainingJobName = ToStringPtr(specifiedTrainingJobName)
+					})
+
+					It("Creates a TrainingJob", func() {
+						req := receivedRequests.Front().Next().Value
+						Expect(req).To(BeAssignableToTypeOf((*sagemaker.CreateTrainingJobInput)(nil)))
+
+						createdRequest := req.(*sagemaker.CreateTrainingJobInput)
+						Expect(*createdRequest.TrainingJobName).To(Equal(specifiedTrainingJobName))
+					})
+
+					It("Does not modify the job name in the spec", func() {
+						ExpectTrainingJobNameInSpec(specifiedTrainingJobName, trainingJob)
+					})
+
+					It("Adds the training job name to the status", func() {
+						ExpectTrainingJobNameInStatus(specifiedTrainingJobName, trainingJob)
+					})
 				})
 			})
 		})

@@ -21,6 +21,7 @@ import (
 	"net/http"
 
 	. "container/list"
+
 	. "github.com/onsi/ginkgo"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -184,6 +185,15 @@ func (m *MockSageMakerClientBuilder) AddCreateTrainingJobResponse(data sagemaker
 	m.responses.PushBack(createTrainingJobResponse{
 		err:  nil,
 		data: &data,
+	})
+	return m
+}
+
+// AddCreateTrainingJobErrorResponse generates a CreateTrainingJob error response to the client.
+func (m *MockSageMakerClientBuilder) AddCreateTrainingJobErrorResponse(code string, message string, statusCode int, reqID string) *MockSageMakerClientBuilder {
+	m.responses.PushBack(createTrainingJobResponse{
+		err:  awserr.NewRequestFailure(awserr.New(code, message, fmt.Errorf(code)), statusCode, reqID),
+		data: nil,
 	})
 	return m
 }
